@@ -1,0 +1,9 @@
+/* index.css - Base global styles (main app styles are in app.css) */
+body {
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
