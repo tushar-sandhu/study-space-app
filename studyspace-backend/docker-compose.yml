@@ -1,0 +1,97 @@
+version: '3.9'
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: studyspace_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       studyspace_db
+      POSTGRES_USER:     studyspace_user
+      POSTGRES_PASSWORD: studyspace_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studyspace_user -d studyspace_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: studyspace_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── API Server ──────────────────────────────────────────────────────────────
+  api:
+    build: .
+    container_name: studyspace_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV:        production
+      PORT:            5000
+      DB_HOST:         postgres
+      DB_PORT:         5432
+      DB_NAME:         studyspace_db
+      DB_USER:         studyspace_user
+      DB_PASSWORD:     studyspace_pass
+      REDIS_HOST:      redis
+      REDIS_PORT:      6379
+      JWT_SECRET:      ${JWT_SECRET:-change-me-in-production-min-32-chars}
+      JWT_EXPIRES_IN:  7d
+      FRONTEND_URL:    ${FRONTEND_URL:-http://localhost:3000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      SMTP_HOST:       ${SMTP_HOST:-}
+      SMTP_PORT:       ${SMTP_PORT:-587}
+      SMTP_USER:       ${SMTP_USER:-}
+      SMTP_PASS:       ${SMTP_PASS:-}
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── pgAdmin (dev only) ──────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: studyspace_pgadmin
+    profiles: ["dev"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    admin@mahe.edu
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: studyspace_network
